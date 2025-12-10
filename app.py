@@ -10,8 +10,7 @@ CSV_FILE_NAME = "Data.csv"
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv(CSV_FILE_NAME)
-    return df
+    return pd.read_csv(CSV_FILE_NAME)
 
 df = load_data()
 
@@ -22,9 +21,7 @@ sub_menus = {}
 for idx, subject in enumerate(df['subject'].unique(), start=1):
     main_menu[str(idx)] = subject
     sub_df = df[df['subject'] == subject]
-    sub_menus[subject] = OrderedDict(
-        {str(i+1): q for i, q in enumerate(sub_df['question'])}
-    )
+    sub_menus[subject] = OrderedDict({str(i+1): q for i, q in enumerate(sub_df['question'])})
 
 # =========================================================
 # 2. SESSION STATE
@@ -36,7 +33,7 @@ if "current_menu" not in st.session_state:
     st.session_state.current_menu = "MAIN"
 
 # =========================================================
-# 3. BEAUTIFUL CHAT CSS (WhatsApp-style)
+# 3. CHAT CSS (COLOR SWAPPED)
 # =========================================================
 CHAT_CSS = """
 <style>
@@ -55,19 +52,21 @@ CHAT_CSS = """
     line-height: 1.4;
 }
 
-.assistant {
+/* USER (white/grey bubble) */
+.user {
     background: #ECECEC;
     color: black;
-    border-bottom-left-radius: 0;
-    text-align: left;
-}
-
-.user {
-    background: #4CAF50;
-    color: white;
     border-bottom-right-radius: 0;
     margin-left: auto;
     text-align: right;
+}
+
+/* ASSISTANT (GREEN bubble) */
+.assistant {
+    background: #4CAF50;
+    color: white;
+    border-bottom-left-radius: 0;
+    text-align: left;
 }
 </style>
 """
@@ -77,57 +76,53 @@ st.markdown(CHAT_CSS, unsafe_allow_html=True)
 # =========================================================
 # 4. FUNCTIONS
 # =========================================================
-def add_message(role, message):
-    st.session_state.chat.append({"role": role, "msg": message})
+def add_message(role, msg):
+    st.session_state.chat.append({"role": role, "msg": msg})
 
 def display_chat():
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-    for c in st.session_state.chat:
-        role_class = "assistant" if c["role"] == "assistant" else "user"
-        st.markdown(f'<div class="message {role_class}">{c["msg"]}</div>', unsafe_allow_html=True)
+    for bubble in st.session_state.chat:
+        css_class = "assistant" if bubble["role"] == "assistant" else "user"
+        st.markdown(f'<div class="message {css_class}">{bubble["msg"]}</div>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 def get_answer(question):
     row = df[df["question"] == question]
     if not row.empty:
-        return row.iloc[0]["answer"]
+        return row.iloc[0]["answer"]  # NO "Answer:" PREFIX
     return "I couldn't find an answer for that."
 
 # =========================================================
-# 5. STREAMLIT PAGE
+# 5. UI
 # =========================================================
-st.title("📱 PlotBot Assistant (Modern UI)")
+st.title("📱 PlotBot Assistant")
 
-# Show chat UI
 display_chat()
-
 st.write("---")
 
-# =========================================================
-# 6. MENU SYSTEM
-# =========================================================
 def show_menu(menu_dict, title="Choose an option:"):
     st.subheader(title)
     cols = st.columns(2)
-
-    for idx, (key, value) in enumerate(menu_dict.items()):
-        if cols[idx % 2].button(value):
-            handle_selection(value)
+    for i, (k, v) in enumerate(menu_dict.items()):
+        if cols[i % 2].button(v):
+            handle_selection(v)
 
 def handle_selection(value):
-    # Category selection
-    if value in main_menu.values():
+    if value in main_menu.values():  
         st.session_state.current_menu = value
     else:
-        # User clicked a question
+        # User clicked a question -> show user message
         add_message("user", value)
+
+        # Add assistant answer (NO "Answer:" AND NO "Got it")
         ans = get_answer(value)
-        add_message("assistant", f"**Answer:** {ans}")
-        add_message("assistant", "✔️ Got it!")
+        add_message("assistant", ans)
+
+        # Return to main menu
         st.session_state.current_menu = "MAIN"
+
     st.rerun()
 
-# Main menu logic
 if st.session_state.current_menu == "MAIN":
     show_menu(main_menu)
 else:
