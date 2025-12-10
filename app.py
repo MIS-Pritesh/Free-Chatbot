@@ -1,94 +1,174 @@
 import streamlit as st
 import pandas as pd
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
+import os
+from collections import OrderedDict
 
-st.title("📊 CSV-based Chatbot (Free Open-Source Model)")
+# ======================================================================
+# 1. DATA LOADING AND PROCESSING
+# ======================================================================
 
-# ---------------------------------------------------------
-# Load Small Model Suitable for Streamlit Cloud
-# ---------------------------------------------------------
-@st.cache_resource
-def load_model():
-    model_name = "Qwen/Qwen2.5-0.5B-Instruct"  # FAST & FREE & SMALL
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        torch_dtype=torch.float32  # CPU-compatible
-    )
-    return tokenizer, model
+# File name must match your GitHub file name exactly
+CSV_FILE_NAME = "Data.csv" 
 
-tokenizer, model = load_model()
-
-# ---------------------------------------------------------
-# Load CSV
-# ---------------------------------------------------------
-@st.cache_resource
-def load_csv():
+@st.cache_data
+def load_and_structure_data(file_name):
+    """
+    Loads data from CSV, structures it into an organized dictionary
+    for menu display, and returns the main subjects and sub-menus.
+    Uses st.cache_data to run only once.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(script_dir, file_name)
+    
+    if not os.path.exists(file_path):
+        st.error(f"FATAL ERROR: Data file '{file_name}' not found. Please ensure the file is named **Data.csv** and is in the same directory as app.py.")
+        return OrderedDict(), {}, pd.DataFrame()
+    
     try:
-        df = pd.read_csv("Data.csv")
-        return df
+        df = pd.read_csv(file_path)
+        REQUIRED_COLS = ['subject', 'question', 'answer']
+        if not all(col in df.columns for col in REQUIRED_COLS):
+            st.error(f"FATAL ERROR: CSV must contain the columns: {', '.join(REQUIRED_COLS)}")
+            return OrderedDict(), {}, pd.DataFrame()
+        
+        main_menu = OrderedDict() 
+        sub_menus = {}
+        grouped_data = df.groupby('subject')
+        
+        for subject, group in grouped_data:
+            key = str(len(main_menu) + 1)
+            main_menu[key] = subject
+            
+            sub_menu_questions = OrderedDict()
+            for i, row in enumerate(group.itertuples()):
+                q_key = str(i + 1)
+                sub_menu_questions[q_key] = row.question
+            
+            sub_menus[subject] = sub_menu_questions
+
+        return main_menu, sub_menus, df
+
     except Exception as e:
-        st.error(f"❌ Could not load Data.csv: {e}")
-        return None
+        st.error(f"FATAL ERROR: Failed to load or process CSV data. Error: {e}")
+        return OrderedDict(), {}, pd.DataFrame()
 
-df = load_csv()
+# Load data only once at the start of the session
+if 'main_menu' not in st.session_state:
+    main_menu_data, sub_menus_data, qa_data_df = load_and_structure_data(CSV_FILE_NAME)
+    st.session_state.main_menu = main_menu_data
+    st.session_state.sub_menus = sub_menus_data
+    st.session_state.qa_data = qa_data_df
 
-if df is not None:
-    st.subheader("📁 Loaded Data.csv")
-    st.dataframe(df)
 
-# Convert CSV to text knowledge
-def csv_to_text(df):
-    text = ""
-    for idx, row in df.iterrows():
-        row_text = ", ".join([f"{col}: {str(val)}" for col, val in row.items()])
-        text += row_text + "\n"
-    return text
+# ======================================================================
+# 2. ANSWER RETRIEVAL LOGIC
+# ======================================================================
 
-csv_text = csv_to_text(df) if df is not None else ""
+def get_fixed_answer(question):
+    """Retrieves the answer by searching the loaded DataFrame."""
+    if 'qa_data' not in st.session_state or st.session_state.qa_data.empty:
+        return "System error: Data not loaded."
+        
+    try:
+        answer_row = st.session_state.qa_data[st.session_state.qa_data['question'] == question]
+        
+        if not answer_row.empty:
+            return answer_row.iloc[0]['answer']
+        
+        return "I'm sorry, I could not find a specific answer for that question in my database."
+    except Exception as e:
+        return f"An internal error occurred during lookup: {e}"
 
-# ---------------------------------------------------------
-# Chat Section
-# ---------------------------------------------------------
-if "history" not in st.session_state:
-    st.session_state.history = []
 
-user_input = st.text_input("Ask based on CSV:")
+# ======================================================================
+# 3. THEME INJECTION AND STREAMLIT SETUP (Sidebar Removed)
+# ======================================================================
 
-if st.button("Send") and user_input.strip() != "":
-    # Build prompt for the model
-    prompt = (
-        "You are a helpful assistant. Only answer using the following CSV data:\n\n"
-        f"{csv_text}\n\n"
-        "Conversation:\n"
-    )
+# --- Simplified Theme Injection (Defaults to Dark, No User Control) ---
+# To keep the code clean without the sidebar, we just force a default theme.
+def inject_default_css():
+    css = """
+    :root {
+        --primary-color: #4CAF50; 
+        --background-color: #1c1c1c; 
+        --text-color: #CCCCCC;
+    }
+    """
+    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
-    for role, msg in st.session_state.history:
-        prompt += f"{role}: {msg}\n"
+# Apply a default theme
+inject_default_css()
 
-    prompt += f"User: {user_input}\nAssistant:"
+# --- State Initialization ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+    st.session_state.chat_history.append({"role": "assistant", "content": "Hello! I am PlotBot, your Q&A assistant. Please select a category below to get started."})
 
-    inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
+if "current_menu_key" not in st.session_state:
+    st.session_state.current_menu_key = "MAIN"
 
-    # CPU-friendly generation
-    output = model.generate(
-        **inputs,
-        max_new_tokens=150,
-        temperature=0.4,
-        top_p=0.9,
-        do_sample=True
-    )
 
-    reply = tokenizer.decode(output[0], skip_special_tokens=True)
-    bot_reply = reply.split("Assistant:")[-1].strip()
+st.title("CSV-Driven Q&A Bot 🏡")
 
-    st.session_state.history.append(("User", user_input))
-    st.session_state.history.append(("Assistant", bot_reply))
 
-# Display conversation
-for role, msg in st.session_state.history:
-    if role == "User":
-        st.markdown(f"**👤 You:** {msg}")
+# Helper function to display the current menu buttons
+def display_menu(menu_dict):
+    st.markdown("### Choose an Option:")
+    
+    cols = st.columns(3) 
+    
+    for i, (key, value) in enumerate(menu_dict.items()):
+        
+        button_key = f"btn_{st.session_state.current_menu_key}_{key}"
+        
+        if cols[i % 3].button(value, key=button_key):
+            handle_user_selection(value)
+            st.rerun() 
+
+
+# Helper function to process user clicks
+def handle_user_selection(value):
+    # --- CHANGE APPLIED HERE: REMOVE USER ACTION LOGGING ---
+    # We no longer log the "Selected: ..." message to the chat history.
+    
+    # 1. Check if the selection is a main category (i.e., a subject)
+    if value in st.session_state.main_menu.values():
+        st.session_state.current_menu_key = value
+        
+    # 2. The selection is a specific question
     else:
-        st.markdown(f"**🤖 Bot:** {msg}")
+        # Log the question and answer from the Assistant's perspective
+        st.session_state.chat_history.append({"role": "assistant", "content": f"**Question:** {value}"})
+        
+        answer = get_fixed_answer(value)
+        
+        st.session_state.chat_history.append({"role": "assistant", "content": f"**Answer:** {answer}"})
+        
+        # After answering, return to the main menu
+        st.session_state.current_menu_key = "MAIN"
+        
+        # --- IMPROVED CONVERSATIONAL CLOSURE ---
+        st.session_state.chat_history.append({"role": "assistant", "content": "✅ Got it! Ready for your next question."})
+
+
+# 4. Display Chat History
+for message in st.session_state.chat_history:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+
+# 5. Menu Display Logic
+if st.session_state.main_menu:
+    if st.session_state.current_menu_key == "MAIN":
+        display_menu(st.session_state.main_menu)
+    else:
+        # We are in a sub-menu
+        menu_to_display = st.session_state.sub_menus.get(st.session_state.current_menu_key, {})
+        
+        # Display the "Go Back" button first
+        back_button_key = f"back_btn_{st.session_state.current_menu_key}"
+        if st.button("⬅️ Go Back to Main Menu", key=back_button_key):
+            st.session_state.current_menu_key = "MAIN"
+            st.rerun()
+            
+        display_menu(menu_to_display)
