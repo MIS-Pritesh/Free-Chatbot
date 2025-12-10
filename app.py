@@ -118,20 +118,22 @@ if "current_menu_key" not in st.session_state:
 
 st.title("CSV-Driven Q&A Bot 🏡")
 
-# Helper function to display the current menu buttons
 def display_menu(menu_dict):
     st.markdown("### Choose an Option:")
     
-    # Use 1 column for mobile friendliness (change to 3 if you want desktop multi-cols)
-    cols = st.columns(1) 
+    cols = st.columns(1)  # mobile-friendly 1 column
+    
+    clicked_value = None
     
     for i, (key, value) in enumerate(menu_dict.items()):
         button_key = f"btn_{st.session_state.current_menu_key}_{key}"
         if cols[0].button(value, key=button_key):
-            handle_user_selection(value)
-            st.experimental_rerun()
+            clicked_value = value
+    
+    if clicked_value is not None:
+        handle_user_selection(clicked_value)
+        st.experimental_rerun()  # rerun only once after the loop
 
-# Helper function to process user clicks
 def handle_user_selection(value):
     if value in st.session_state.main_menu.values():
         st.session_state.current_menu_key = value
