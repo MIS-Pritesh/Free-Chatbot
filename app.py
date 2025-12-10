@@ -171,4 +171,4 @@ if st.session_state.main_menu:
             st.session_state.current_menu_key = "MAIN"
             st.rerun()
             
-        display_menu(menu_to_display)    , here in a mobile phone , see the look and text , i think it is big for mobile right ? 
+        display_menu(menu_to_display)
