@@ -7,16 +7,10 @@ from collections import OrderedDict
 # 1. DATA LOADING AND PROCESSING
 # ======================================================================
 
-# File name must match your GitHub file name exactly
 CSV_FILE_NAME = "Data.csv" 
 
 @st.cache_data
 def load_and_structure_data(file_name):
-    """
-    Loads data from CSV, structures it into an organized dictionary
-    for menu display, and returns the main subjects and sub-menus.
-    Uses st.cache_data to run only once.
-    """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(script_dir, file_name)
     
@@ -52,20 +46,17 @@ def load_and_structure_data(file_name):
         st.error(f"FATAL ERROR: Failed to load or process CSV data. Error: {e}")
         return OrderedDict(), {}, pd.DataFrame()
 
-# Load data only once at the start of the session
 if 'main_menu' not in st.session_state:
     main_menu_data, sub_menus_data, qa_data_df = load_and_structure_data(CSV_FILE_NAME)
     st.session_state.main_menu = main_menu_data
     st.session_state.sub_menus = sub_menus_data
     st.session_state.qa_data = qa_data_df
 
-
 # ======================================================================
 # 2. ANSWER RETRIEVAL LOGIC
 # ======================================================================
 
 def get_fixed_answer(question):
-    """Retrieves the answer by searching the loaded DataFrame."""
     if 'qa_data' not in st.session_state or st.session_state.qa_data.empty:
         return "System error: Data not loaded."
         
@@ -79,13 +70,10 @@ def get_fixed_answer(question):
     except Exception as e:
         return f"An internal error occurred during lookup: {e}"
 
-
 # ======================================================================
 # 3. THEME INJECTION AND STREAMLIT SETUP (Sidebar Removed)
 # ======================================================================
 
-# --- Simplified Theme Injection (Defaults to Dark, No User Control) ---
-# To keep the code clean without the sidebar, we just force a default theme.
 def inject_default_css():
     css = """
     :root {
@@ -93,82 +81,80 @@ def inject_default_css():
         --background-color: #1c1c1c; 
         --text-color: #CCCCCC;
     }
+
+    /* Mobile friendly styling */
+    @media only screen and (max-width: 600px) {
+        .stMarkdown {
+            font-size: 14px !important;
+            padding: 4px 8px !important;
+        }
+        .stButton>button {
+            font-size: 14px !important;
+            padding: 6px 10px !important;
+            white-space: normal !important;
+            text-align: left !important;
+        }
+        .stChatMessage>div {
+            font-size: 14px !important;
+            padding: 6px 10px !important;
+            margin-bottom: 6px !important;
+        }
+    }
     """
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
-# Apply a default theme
 inject_default_css()
 
 # --- State Initialization ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-    st.session_state.chat_history.append({"role": "assistant", "content": "Hello! I am PlotBot, your Q&A assistant. Please select a category below to get started."})
+    st.session_state.chat_history.append({
+        "role": "assistant", 
+        "content": "Hello! I am PlotBot, your Q&A assistant. Please select a category below to get started."
+    })
 
 if "current_menu_key" not in st.session_state:
     st.session_state.current_menu_key = "MAIN"
 
-
 st.title("CSV-Driven Q&A Bot 🏡")
-
 
 # Helper function to display the current menu buttons
 def display_menu(menu_dict):
     st.markdown("### Choose an Option:")
     
-    cols = st.columns(3) 
+    # Use 1 column for mobile friendliness (change to 3 if you want desktop multi-cols)
+    cols = st.columns(1) 
     
     for i, (key, value) in enumerate(menu_dict.items()):
-        
         button_key = f"btn_{st.session_state.current_menu_key}_{key}"
-        
-        if cols[i % 3].button(value, key=button_key):
+        if cols[0].button(value, key=button_key):
             handle_user_selection(value)
-            st.rerun() 
-
+            st.experimental_rerun()
 
 # Helper function to process user clicks
 def handle_user_selection(value):
-    # --- CHANGE APPLIED HERE: REMOVE USER ACTION LOGGING ---
-    # We no longer log the "Selected: ..." message to the chat history.
-    
-    # 1. Check if the selection is a main category (i.e., a subject)
     if value in st.session_state.main_menu.values():
         st.session_state.current_menu_key = value
-        
-    # 2. The selection is a specific question
     else:
-        # Log the question and answer from the Assistant's perspective
-        st.session_state.chat_history.append({"role": "assistant", "content": f"**Question:** {value}"})
-        
+        st.session_state.chat_history.append({"role": "assistant", "content": f"<b>Question:</b> {value}"})
         answer = get_fixed_answer(value)
-        
-        st.session_state.chat_history.append({"role": "assistant", "content": f"**Answer:** {answer}"})
-        
-        # After answering, return to the main menu
+        st.session_state.chat_history.append({"role": "assistant", "content": f"<b>Answer:</b> {answer}"})
         st.session_state.current_menu_key = "MAIN"
-        
-        # --- IMPROVED CONVERSATIONAL CLOSURE ---
         st.session_state.chat_history.append({"role": "assistant", "content": "✅ Got it! Ready for your next question."})
 
-
-# 4. Display Chat History
+# Display chat history
 for message in st.session_state.chat_history:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        st.markdown(message["content"], unsafe_allow_html=True)
 
-
-# 5. Menu Display Logic
+# Menu display logic
 if st.session_state.main_menu:
     if st.session_state.current_menu_key == "MAIN":
         display_menu(st.session_state.main_menu)
     else:
-        # We are in a sub-menu
         menu_to_display = st.session_state.sub_menus.get(st.session_state.current_menu_key, {})
-        
-        # Display the "Go Back" button first
         back_button_key = f"back_btn_{st.session_state.current_menu_key}"
         if st.button("⬅️ Go Back to Main Menu", key=back_button_key):
             st.session_state.current_menu_key = "MAIN"
-            st.rerun()
-            
+            st.experimental_rerun()
         display_menu(menu_to_display)
