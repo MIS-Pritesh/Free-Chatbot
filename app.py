@@ -3,172 +3,133 @@ import pandas as pd
 import os
 from collections import OrderedDict
 
-# ======================================================================
-# 1. DATA LOADING AND PROCESSING
-# ======================================================================
-
-# File name must match your GitHub file name exactly
-CSV_FILE_NAME = "Data.csv" 
+# =========================================================
+# 1. LOAD DATA
+# =========================================================
+CSV_FILE_NAME = "Data.csv"
 
 @st.cache_data
-def load_and_structure_data(file_name):
-    """
-    Loads data from CSV, structures it into an organized dictionary
-    for menu display, and returns the main subjects and sub-menus.
-    Uses st.cache_data to run only once.
-    """
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(script_dir, file_name)
-    
-    if not os.path.exists(file_path):
-        st.error(f"FATAL ERROR: Data file '{file_name}' not found. Please ensure the file is named **Data.csv** and is in the same directory as app.py.")
-        return OrderedDict(), {}, pd.DataFrame()
-    
-    try:
-        df = pd.read_csv(file_path)
-        REQUIRED_COLS = ['subject', 'question', 'answer']
-        if not all(col in df.columns for col in REQUIRED_COLS):
-            st.error(f"FATAL ERROR: CSV must contain the columns: {', '.join(REQUIRED_COLS)}")
-            return OrderedDict(), {}, pd.DataFrame()
-        
-        main_menu = OrderedDict() 
-        sub_menus = {}
-        grouped_data = df.groupby('subject')
-        
-        for subject, group in grouped_data:
-            key = str(len(main_menu) + 1)
-            main_menu[key] = subject
-            
-            sub_menu_questions = OrderedDict()
-            for i, row in enumerate(group.itertuples()):
-                q_key = str(i + 1)
-                sub_menu_questions[q_key] = row.question
-            
-            sub_menus[subject] = sub_menu_questions
+def load_data():
+    df = pd.read_csv(CSV_FILE_NAME)
+    return df
 
-        return main_menu, sub_menus, df
+df = load_data()
 
-    except Exception as e:
-        st.error(f"FATAL ERROR: Failed to load or process CSV data. Error: {e}")
-        return OrderedDict(), {}, pd.DataFrame()
+# Build menu structures
+main_menu = OrderedDict()
+sub_menus = {}
 
-# Load data only once at the start of the session
-if 'main_menu' not in st.session_state:
-    main_menu_data, sub_menus_data, qa_data_df = load_and_structure_data(CSV_FILE_NAME)
-    st.session_state.main_menu = main_menu_data
-    st.session_state.sub_menus = sub_menus_data
-    st.session_state.qa_data = qa_data_df
+for idx, subject in enumerate(df['subject'].unique(), start=1):
+    main_menu[str(idx)] = subject
+    sub_df = df[df['subject'] == subject]
+    sub_menus[subject] = OrderedDict(
+        {str(i+1): q for i, q in enumerate(sub_df['question'])}
+    )
 
+# =========================================================
+# 2. SESSION STATE
+# =========================================================
+if "chat" not in st.session_state:
+    st.session_state.chat = [{"role": "assistant", "msg": "Hello! I am PlotBot. Please select a category below."}]
 
-# ======================================================================
-# 2. ANSWER RETRIEVAL LOGIC
-# ======================================================================
+if "current_menu" not in st.session_state:
+    st.session_state.current_menu = "MAIN"
 
-def get_fixed_answer(question):
-    """Retrieves the answer by searching the loaded DataFrame."""
-    if 'qa_data' not in st.session_state or st.session_state.qa_data.empty:
-        return "System error: Data not loaded."
-        
-    try:
-        answer_row = st.session_state.qa_data[st.session_state.qa_data['question'] == question]
-        
-        if not answer_row.empty:
-            return answer_row.iloc[0]['answer']
-        
-        return "I'm sorry, I could not find a specific answer for that question in my database."
-    except Exception as e:
-        return f"An internal error occurred during lookup: {e}"
+# =========================================================
+# 3. BEAUTIFUL CHAT CSS (WhatsApp-style)
+# =========================================================
+CHAT_CSS = """
+<style>
+.chat-container {
+    width: 100%;
+    max-width: 450px;
+    margin: auto;
+}
 
+.message {
+    padding: 10px 14px;
+    margin: 8px;
+    max-width: 85%;
+    font-size: 16px;
+    border-radius: 12px;
+    line-height: 1.4;
+}
 
-# ======================================================================
-# 3. THEME INJECTION AND STREAMLIT SETUP (Sidebar Removed)
-# ======================================================================
+.assistant {
+    background: #ECECEC;
+    color: black;
+    border-bottom-left-radius: 0;
+    text-align: left;
+}
 
-# --- Simplified Theme Injection (Defaults to Dark, No User Control) ---
-# To keep the code clean without the sidebar, we just force a default theme.
-def inject_default_css():
-    css = """
-    :root {
-        --primary-color: #4CAF50; 
-        --background-color: #1c1c1c; 
-        --text-color: #CCCCCC;
-    }
-    """
-    st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+.user {
+    background: #4CAF50;
+    color: white;
+    border-bottom-right-radius: 0;
+    margin-left: auto;
+    text-align: right;
+}
+</style>
+"""
 
-# Apply a default theme
-inject_default_css()
+st.markdown(CHAT_CSS, unsafe_allow_html=True)
 
-# --- State Initialization ---
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-    st.session_state.chat_history.append({"role": "assistant", "content": "Hello! I am PlotBot, your Q&A assistant. Please select a category below to get started."})
+# =========================================================
+# 4. FUNCTIONS
+# =========================================================
+def add_message(role, message):
+    st.session_state.chat.append({"role": role, "msg": message})
 
-if "current_menu_key" not in st.session_state:
-    st.session_state.current_menu_key = "MAIN"
+def display_chat():
+    st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+    for c in st.session_state.chat:
+        role_class = "assistant" if c["role"] == "assistant" else "user"
+        st.markdown(f'<div class="message {role_class}">{c["msg"]}</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
+def get_answer(question):
+    row = df[df["question"] == question]
+    if not row.empty:
+        return row.iloc[0]["answer"]
+    return "I couldn't find an answer for that."
 
-st.title("Chatbot")
+# =========================================================
+# 5. STREAMLIT PAGE
+# =========================================================
+st.title("📱 PlotBot Assistant (Modern UI)")
 
+# Show chat UI
+display_chat()
 
-# Helper function to display the current menu buttons
-def display_menu(menu_dict):
-    st.markdown("### Choose an Option:")
-    
-    cols = st.columns(3) 
-    
-    for i, (key, value) in enumerate(menu_dict.items()):
-        
-        button_key = f"btn_{st.session_state.current_menu_key}_{key}"
-        
-        if cols[i % 3].button(value, key=button_key):
-            handle_user_selection(value)
-            st.rerun() 
+st.write("---")
 
+# =========================================================
+# 6. MENU SYSTEM
+# =========================================================
+def show_menu(menu_dict, title="Choose an option:"):
+    st.subheader(title)
+    cols = st.columns(2)
 
-# Helper function to process user clicks
-def handle_user_selection(value):
-    # --- CHANGE APPLIED HERE: REMOVE USER ACTION LOGGING ---
-    # We no longer log the "Selected: ..." message to the chat history.
-    
-    # 1. Check if the selection is a main category (i.e., a subject)
-    if value in st.session_state.main_menu.values():
-        st.session_state.current_menu_key = value
-        
-    # 2. The selection is a specific question
+    for idx, (key, value) in enumerate(menu_dict.items()):
+        if cols[idx % 2].button(value):
+            handle_selection(value)
+
+def handle_selection(value):
+    # Category selection
+    if value in main_menu.values():
+        st.session_state.current_menu = value
     else:
-        # Log the question and answer from the Assistant's perspective
-        st.session_state.chat_history.append({"role": "assistant", "content": f"**Question:** {value}"})
-        
-        answer = get_fixed_answer(value)
-        
-        st.session_state.chat_history.append({"role": "assistant", "content": f"**Answer:** {answer}"})
-        
-        # After answering, return to the main menu
-        st.session_state.current_menu_key = "MAIN"
-        
-        # --- IMPROVED CONVERSATIONAL CLOSURE ---
-        st.session_state.chat_history.append({"role": "assistant", "content": "✅ Got it!"})
+        # User clicked a question
+        add_message("user", value)
+        ans = get_answer(value)
+        add_message("assistant", f"**Answer:** {ans}")
+        add_message("assistant", "✔️ Got it!")
+        st.session_state.current_menu = "MAIN"
+    st.rerun()
 
-
-# 4. Display Chat History
-for message in st.session_state.chat_history:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-
-# 5. Menu Display Logic
-if st.session_state.main_menu:
-    if st.session_state.current_menu_key == "MAIN":
-        display_menu(st.session_state.main_menu)
-    else:
-        # We are in a sub-menu
-        menu_to_display = st.session_state.sub_menus.get(st.session_state.current_menu_key, {})
-        
-        # Display the "Go Back" button first
-        back_button_key = f"back_btn_{st.session_state.current_menu_key}"
-        if st.button("⬅️ Go Back to Main Menu", key=back_button_key):
-            st.session_state.current_menu_key = "MAIN"
-            st.rerun()
-            
-        display_menu(menu_to_display)
+# Main menu logic
+if st.session_state.current_menu == "MAIN":
+    show_menu(main_menu)
+else:
+    st.button("⬅️ Back", on_click=lambda: st.session_state.update(current_menu="MAIN"))
+    show_menu(sub_menus[st.session_state.current_menu], title="Select a Question:")
