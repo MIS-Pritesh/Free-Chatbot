@@ -108,7 +108,7 @@ if "current_menu_key" not in st.session_state:
     st.session_state.current_menu_key = "MAIN"
 
 
-st.title("CSV-Driven Q&A Bot 🏡")
+st.title("Chatbot")
 
 
 # Helper function to display the current menu buttons
@@ -148,7 +148,7 @@ def handle_user_selection(value):
         st.session_state.current_menu_key = "MAIN"
         
         # --- IMPROVED CONVERSATIONAL CLOSURE ---
-        st.session_state.chat_history.append({"role": "assistant", "content": "✅ Got it! Ready for your next question."})
+        st.session_state.chat_history.append({"role": "assistant", "content": "✅ Got it!"})
 
 
 # 4. Display Chat History
