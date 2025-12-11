@@ -95,7 +95,7 @@ def get_answer(question):
 # =========================================================
 # 5. UI
 # =========================================================
-st.title("📱 PlotBot Assistant")
+st.title("ChatBot Assistant")
 
 display_chat()
 st.write("---")
